@@ -11,20 +11,20 @@
 あなた ──管理画面（自分のみ）──▶ Firebase（登録・リセット・問題の作成）
 ```
 
-このフォルダ（`CBTtestsite`）は**公開されます**。鍵やパスワードを入れないでください。
+このフォルダ（`school`）は**公開されます**。鍵やパスワードを入れないでください。
 
 ```
-CBTtestsite/
+school/
 ├─ index.html           入口（ログイン・アプリの選択・パスワード変更）
 ├─ apps.js              入口に並べるアプリの一覧（新しいアプリはここに1行足す）
 ├─ firebase-config.js   Firebaseの設定値（公開してよい値）
 ├─ firestore.rules      Firestoreのルール（Firebaseの画面に貼る）
 ├─ shared/              全アプリ共通の部品（style.css・common.js）
 ├─ CBT/                 CBTテスト（小テスト）。school/ は学年・学科の一覧
-├─ I1/                  I1テスト対策（一問一答）
+├─ QA/                  一問一答（旧I1サイト）
 └─ .gitignore
 
-CBT と I1 は対等のアプリです。入口でログインすると、アプリを選べます。ログイン情報は全アプリで共通です。
+CBT と 一問一答（`QA/` フォルダ）は対等のアプリです。入口でログインすると、アプリを選べます。ログイン情報は全アプリで共通です。
 新しいアプリを足すには、フォルダを作って `index.html` を置き、`apps.js` に `{ id: '名前', name: '表示名', path: './フォルダ名/' }` を1行足します（Firebase読み込み・`../firebase-config.js`・`../shared/common.js` の使い方は I1/ を参考に）。
 ```
 
@@ -41,8 +41,8 @@ CBT と I1 は対等のアプリです。入口でログインすると、アプ
 Macは、Gitが未インストールだと `git --version` で案内が出ます（「インストール」を押すだけ）。Windowsは https://git-scm.com から入れます。
 
 1. `subject/` フォルダは使いません（教科の問題は、管理画面の「教科ファイルの取り込み」で登録します）。`firebase-config.js` の `ADMIN_PAGE_URL` に、管理画面（Apps Script）のURLを入れると、管理者の「管理画面」ボタンが使えます。
-2. GitHubで、空のリポジトリ `CBTtestsite` を作る（**Public**。READMEなどは追加しない）。
-3. VS Codeで `CBTtestsite` を開き、ターミナルで：
+2. GitHubで、空のリポジトリ `school` を作る（**Public**。READMEなどは追加しない）。
+3. VS Codeで `school` を開き、ターミナルで：
    ```
    git config --global user.name "あなたの名前"
    git config --global user.email "GitHubに登録したメールアドレス"
@@ -54,10 +54,10 @@ Macは、Gitが未インストールだと `git --version` で案内が出ます
    一覧に、鍵のJSONなど**秘密のファイルが出ていない**ことを確認してから：
    ```
    git commit -m "最初の版"
-   git remote add origin https://github.com/ユーザー名/CBTtestsite.git
+   git remote add origin https://github.com/ユーザー名/school.git
    git push -u origin main
    ```
-4. リポジトリの Settings → Pages → Branch：`main` / `(root)` → Save。1〜3分後に出る `https://ユーザー名.github.io/CBTtestsite/` を生徒に配る。
+4. リポジトリの Settings → Pages → Branch：`main` / `(root)` → Save。1〜3分後に出る `https://ユーザー名.github.io/school/` を生徒に配る。
 
 ## 3. 生徒を登録する
 **`管理画面/セットアップ手順.md` に進んでください。**（鍵の作成、Apps Scriptの設定、600人の登録、問題の作成まで書いてあります）
@@ -69,7 +69,7 @@ git status
 git commit -m "変更のメモ"
 git push
 ```
-2台目のパソコンでは `git init` をせず、`git clone https://github.com/ユーザー名/CBTtestsite.git` で取り込みます。作業の前に `git pull`、後に `git add . / commit / push`。
+2台目のパソコンでは `git init` をせず、`git clone https://github.com/ユーザー名/school.git` で取り込みます。作業の前に `git pull`、後に `git add . / commit / push`。
 
 ## 5. 困ったとき
 | 症状 | 対処 |
@@ -91,9 +91,9 @@ git push
 - 鍵（サービスアカウントのJSON）は、管理画面のApps Scriptの中だけに置きます。このフォルダ・チャット・メールには出さない。
 - GoogleアカウントとGitHubアカウントに二段階認証を設定する。
 
-## I1テスト対策
-`I1/` フォルダがI1テスト対策のページです。入口のアプリ選択から開きます。先生・管理者の操作（★・メモの確認とリセット）は、管理画面で行います。引っ越しの手順は `管理画面/セットアップ手順.md` の最後にあります。
+## 一問一答
+`QA/` フォルダが一問一答のページです。入口のアプリ選択から開きます。先生・管理者の操作（★・メモの確認とリセット）は、管理画面で行います。引っ越しの手順は `管理画面/セットアップ手順.md` の最後にあります。
 
 
 ## URLについて
-CBTテストのURLは `…/CBTtestsite/CBT/` になりました。生徒に配るのは入口 `…/CBTtestsite/`（ログイン後にアプリを選ぶ）です。
+CBTテストのURLは `…/school/CBT/` になりました。生徒に配るのは入口 `…/school/`（ログイン後にアプリを選ぶ）です。

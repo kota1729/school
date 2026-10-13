@@ -1,4 +1,4 @@
-// I1テスト対策：CBTテストと同じログイン（Firebase）を使う。
+// 一問一答（Q&A）：CBTテストと同じログイン（Firebase）を使う。
 // ログインは親フォルダの index.html で行い、このページはログイン済みの状態で開く。
 // ★とメモは Firestore の i1Data/{uid} に保存する。
 
@@ -304,7 +304,7 @@ function showSubjectScreen() {
         list.innerHTML = `
             <div style="text-align:left; background:#fff3f3; border:1px solid #e74c3c; border-radius:8px; padding:15px; font-size:13px; line-height:1.7; color:#555;">
                 <strong style="color:var(--accent);">⚠️ 教科データを読み込めませんでした。</strong><br>
-                <code>I1/subjects</code> フォルダの中に、<code>joho_shori.js</code> などの教科ファイルが入っているか確認してください。
+                <code>QA/subjects</code> フォルダの中に、<code>joho_shori.js</code> などの教科ファイルが入っているか確認してください。
             </div>`;
         return;
     }
