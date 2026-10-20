@@ -123,6 +123,9 @@ async function startApp() {
             currentUsername = nameLabel(currentProfile);
             resetSessionCache();
             await withTimeout(loadSessionData(), 10000, 'データの読み込みがタイムアウトしました。通信環境をご確認ください。');
+            // CBTで登録されている問題セットの単元だけを、一問一答の単元として採用する。
+            // CBTに対応する問題がない／単元が確認できない問題は「単元なし」のままにする。
+            await syncUnitsFromCBTQuestionSets();
             hideLoading();
             showSubjectScreen();
         } catch (error) {
@@ -131,6 +134,76 @@ async function startApp() {
             await showCustomAlert('読み込めませんでした。通信環境をご確認のうえ、ページを再読み込みしてください。', '通信エラー');
         }
     });
+}
+
+
+// CBTの公開問題セットから、問題文・正解・教科が完全一致する単元だけを同期する。
+// 問題文や正解から単元を推測しない。対応するCBTデータがなければ「単元なし」。
+function normalizeUnitMatchText(value) {
+    return String(value == null ? '' : value).normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
+function getCbtCorrectAnswer(item) {
+    if (Array.isArray(item?.a)) {
+        const index = Number.isInteger(Number(item.k)) ? Number(item.k) : 0;
+        return item.a[index] == null ? '' : item.a[index];
+    }
+    return item?.a == null ? '' : item.a;
+}
+
+async function syncUnitsFromCBTQuestionSets() {
+    // 初期値はすべて「単元なし」。CBTのデータで明確に確認できた場合だけ上書きする。
+    const subjects = getSubjectList();
+    subjects.forEach(subject => subject.questions.forEach(question => { question.unit = '単元なし'; }));
+
+    if (!db || !currentUser) return;
+    try {
+        const snapshot = await withTimeout(db.collection('questionSets').get(), 8000, 'CBT単元の読み込みがタイムアウトしました');
+        const cbtUnits = new Map();
+        const ambiguousKeys = new Set();
+
+        snapshot.forEach(doc => {
+            const set = doc.data() || {};
+            const subjectName = normalizeUnitMatchText(set.subject);
+            if (!subjectName) return;
+            (Array.isArray(set.questions) ? set.questions : []).forEach(item => {
+                const questionText = normalizeUnitMatchText(item?.q);
+                const answerText = normalizeUnitMatchText(getCbtCorrectAnswer(item));
+                if (!questionText || !answerText) return;
+
+                const itemUnit = normalizeUnitMatchText(item?.c);
+                const setUnit = normalizeUnitMatchText(set.unit);
+                const unit = itemUnit && itemUnit !== subjectName && itemUnit !== 'すべて'
+                    ? itemUnit
+                    : (setUnit && setUnit !== 'すべて' && setUnit !== subjectName ? setUnit : '単元なし');
+                if (unit === '単元なし') return;
+
+                const key = JSON.stringify([subjectName, questionText, answerText]);
+                if (cbtUnits.has(key) && cbtUnits.get(key) !== unit) {
+                    ambiguousKeys.add(key);
+                } else {
+                    cbtUnits.set(key, unit);
+                }
+            });
+        });
+
+        subjects.forEach(subject => {
+            const subjectName = normalizeUnitMatchText(subject.name);
+            subject.questions.forEach(question => {
+                const key = JSON.stringify([
+                    subjectName,
+                    normalizeUnitMatchText(question.q),
+                    normalizeUnitMatchText(question.a)
+                ]);
+                if (!ambiguousKeys.has(key) && cbtUnits.has(key)) {
+                    question.unit = cbtUnits.get(key);
+                }
+            });
+        });
+    } catch (error) {
+        // CBTの単元データを取得できない場合も、誤った単元を表示せず「単元なし」で続行する。
+        console.warn('CBT単元の同期に失敗したため、単元なしで表示します。', error);
+    }
 }
 
 function getSubjectList() {
