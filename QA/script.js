@@ -150,6 +150,44 @@ function getActiveSubjectQuestions() {
     return subj.questions;
 }
 
+function getUnitFilteredQuestions() {
+    const questions = getActiveSubjectQuestions();
+    const select = document.getElementById('unit-filter-select');
+    const selectedUnit = select ? select.value : '__all__';
+    return selectedUnit === '__all__' ? questions : questions.filter(q => (q.unit || '未分類') === selectedUnit);
+}
+
+function populateUnitFilter() {
+    const select = document.getElementById('unit-filter-select');
+    if (!select) return;
+    const questions = getActiveSubjectQuestions();
+    const units = [...new Set(questions.map(q => q.unit || '未分類'))];
+    select.innerHTML = '<option value="__all__">すべての単元</option>' + units.map(unit =>
+        `<option value="${escapeHtml(unit)}">${escapeHtml(unit)}（${questions.filter(q => (q.unit || '未分類') === unit).length}問）</option>`
+    ).join('');
+    select.value = '__all__';
+    updateUnitFilterCount();
+}
+
+function updateUnitFilterCount() {
+    const count = document.getElementById('unit-filter-count');
+    const select = document.getElementById('unit-filter-select');
+    if (!count || !select) return;
+    const total = getActiveSubjectQuestions().length;
+    const selectedQuestions = getUnitFilteredQuestions();
+    count.textContent = select.value === '__all__'
+        ? `全${total}問から出題します。`
+        : `この単元の${selectedQuestions.length}問から出題します。`;
+
+    const starModeBtn = document.getElementById('menu-star-btn');
+    if (starModeBtn) {
+        const stars = getSessionStars(currentSubject);
+        const filteredStarCount = selectedQuestions.filter(question => stars.includes(question._origIdx)).length;
+        starModeBtn.innerText = `★ 限定モード (現在 ${filteredStarCount} 問)`;
+        starModeBtn.disabled = filteredStarCount === 0;
+    }
+}
+
 function showCustomAlert(message, title = '通知') {
     return new Promise((resolve) => {
         const modal = document.getElementById('custom-modal');
@@ -328,7 +366,7 @@ async function showMainMenu() {
     document.getElementById('menu-screen').style.display = 'block';
     document.getElementById('display-username').innerText = currentUsername;
     document.getElementById('menu-subject-name').innerText = getSubjectName(currentSubject);
-
+    populateUnitFilter();
 
     const starModeBtn = document.getElementById('menu-star-btn');
     const starCount = getSessionStars(currentSubject).length;
@@ -355,7 +393,7 @@ async function startMode(modeNum) {
 
     document.querySelectorAll('.window').forEach(el => el.style.display = 'none');
 
-    const questions = getActiveSubjectQuestions();
+    const questions = getUnitFilteredQuestions();
     const subjectName = getSubjectName(currentSubject);
     const myStars = getSessionStars(currentSubject);
 
@@ -371,7 +409,7 @@ async function startMode(modeNum) {
         document.getElementById('quiz-title').innerText = `${subjectName} - ランダム実力テスト`;
         await setupQuizScreen();
     } else if (modeNum === 4) {
-        activeQuestions = questions.filter((_, idx) => myStars.includes(idx));
+        activeQuestions = questions.filter(question => myStars.includes(question._origIdx));
         document.getElementById('quiz-title').innerText = `${subjectName} - ★ わからない問題 復習テスト`;
         await setupQuizScreen();
     }
@@ -395,6 +433,8 @@ async function showQuestion() {
 
     document.getElementById('quiz-question').innerText = current.q;
     document.getElementById('quiz-answer').innerText = current.a;
+    const unitLabel = document.getElementById('quiz-unit-label');
+    if (unitLabel) unitLabel.textContent = current.unit ? `単元：${current.unit}` : '単元：未分類';
 
     const imgEl = document.getElementById('quiz-question-img');
     if (current.img) {
@@ -518,18 +558,19 @@ async function prevQuestion() {
 async function setupListScreen() {
     document.getElementById('list-screen').style.display = 'block';
     const container = document.getElementById('list-container');
-    const questions = getActiveSubjectQuestions();
+    const questions = getUnitFilteredQuestions();
     const myStars = getSessionStars(currentSubject);
     const myMemos = getSessionMemos(currentSubject);
 
     const htmlParts = questions.map((item, idx) => {
-        const isStarred = myStars.includes(idx);
-        const memoText = escapeHtml(myMemos[idx] || '');
+        const originalIdx = item._origIdx;
+        const isStarred = myStars.includes(originalIdx);
+        const memoText = escapeHtml(myMemos[originalIdx] || '');
         return `
             <div class="qa-card">
                 <div class="card-header">
-                    <div class="q-text">問 ${idx + 1}: ${escapeHtml(item.q)}</div>
-                    <button class="star-btn ${isStarred ? 'active' : ''}" onclick="toggleStarList(${idx}, this)">★</button>
+                    <div class="q-text">問 ${idx + 1}: ${escapeHtml(item.q)}<small style="display:block; margin-top:5px; color:#7f8c8d; font-size:11px;">単元：${escapeHtml(item.unit || '未分類')}</small></div>
+                    <button class="star-btn ${isStarred ? 'active' : ''}" onclick="toggleStarList(${originalIdx}, this)">★</button>
                 </div>
                 ${item.img ? `<img src="${escapeHtml(item.img)}" class="q-image" alt="問題の画像">` : ''}
                 <div class="a-container" onclick="toggleAnswer(this)">
@@ -545,7 +586,7 @@ async function setupListScreen() {
                         <span class="memo-header-text">メモ</span>
                         <span class="memo-status" id="list-memo-status-${idx}"></span>
                     </div>
-                    <textarea class="memo-textarea" autocomplete="off" id="list-memo-${idx}" placeholder="気づいたこと・覚え方のコツなどを書いておこう" oninput="onListMemoInput(${idx})" onblur="saveListMemoNow(${idx})">${memoText}</textarea>
+                    <textarea class="memo-textarea" autocomplete="off" id="list-memo-${idx}" data-original-idx="${originalIdx}" placeholder="気づいたこと・覚え方のコツなどを書いておこう" oninput="onListMemoInput(${idx}, ${originalIdx})" onblur="saveListMemoNow(${idx}, ${originalIdx})">${memoText}</textarea>
                 </div>
             </div>`;
     });
@@ -554,16 +595,16 @@ async function setupListScreen() {
     updateBulkToggleBtnLabel();
 }
 
-function onListMemoInput(idx) {
+function onListMemoInput(idx, originalIdx = idx) {
     const memoEl = document.getElementById('list-memo-' + idx);
-    scheduleMemoSave('list-' + idx, () => saveMemoValue(idx, memoEl.value), 'list-memo-status-' + idx);
+    scheduleMemoSave('list-' + idx, () => saveMemoValue(originalIdx, memoEl.value), 'list-memo-status-' + idx);
 }
 
-async function saveListMemoNow(idx) {
+async function saveListMemoNow(idx, originalIdx = idx) {
     const memoEl = document.getElementById('list-memo-' + idx);
     const key = 'list-' + idx;
     if (memoSaveTimers[key]) clearTimeout(memoSaveTimers[key]);
-    await saveMemoValue(idx, memoEl.value);
+    await saveMemoValue(originalIdx, memoEl.value);
     const statusEl = document.getElementById('list-memo-status-' + idx);
     if (statusEl) {
         statusEl.textContent = '✓ 保存しました';
@@ -585,6 +626,8 @@ function toggleStarList(originalIdx, btnEl) {
 }
 
 // --- キーボード操作（クイズ画面：→次、←前、Enterで答え） ---
+document.getElementById('unit-filter-select')?.addEventListener('change', updateUnitFilterCount);
+
 document.addEventListener('keydown', function (e) {
     const tag = e.target.tagName;
     const quizScreen = document.getElementById('quiz-screen');

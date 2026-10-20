@@ -68,7 +68,7 @@
                                 <option value="fill">回答を直接入力する</option>
                                 <option value="individual">1問ずつ出題（各問4択）</option>
                             </select></div>
-                        <div id="pageSizeField"><label for="newPageSize">1画面あたりの問題数（1〜30）</label><input id="newPageSize" type="text" inputmode="numeric" value="10" autocomplete="off"></div>
+                        <div id="pageSizeField"><label for="newPageSize">1画面あたりの問題数</label><select id="newPageSize" autocomplete="off"><option value="1">1問</option><option value="2">2問</option><option value="3">3問</option><option value="4">4問</option><option value="5">5問</option><option value="6">6問</option><option value="7">7問</option><option value="8">8問</option><option value="9">9問</option><option value="10" selected>10問</option><option value="11">11問</option><option value="12">12問</option><option value="13">13問</option><option value="14">14問</option><option value="15">15問</option><option value="16">16問</option><option value="17">17問</option><option value="18">18問</option><option value="19">19問</option><option value="20">20問</option><option value="21">21問</option><option value="22">22問</option><option value="23">23問</option><option value="24">24問</option><option value="25">25問</option><option value="26">26問</option><option value="27">27問</option><option value="28">28問</option><option value="29">29問</option><option value="30">30問</option></select></div>
                         <div><label for="releaseMode">生徒への出題時刻</label><select autocomplete="off" id="releaseMode">
                                 <option value="now">今すぐ公開</option>
                                 <option value="delay">何分後に公開</option>
@@ -799,8 +799,7 @@
                 });
         }
 
-        // 数字欄：1画面あたりの問題数は1〜30、ランダムに選ぶ問題数は「いまの条件に合う問題数」まで
-        limitNumberInput($('newPageSize'), () => 30);
+        // 1画面あたりの問題数は選択式（1〜30）。ランダムに選ぶ問題数は条件に合う問題数まで。
         const fixRandomCount = limitNumberInput($('randomQuestionCount'), () => getMatchingSourceQuestions().length);
         function syncRandomMax() {
             const n = getMatchingSourceQuestions().length;
@@ -1074,7 +1073,7 @@
             if (type !== 'individual') {
                 pageSize = Number($('newPageSize').value);
                 if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 30) {
-                    $('authorMessage').textContent = '1画面あたりの問題数は、1〜30の整数で入力してください。';
+                    $('authorMessage').textContent = '1画面あたりの問題数を1〜30から選択してください。';
                     return;
                 }
             }
