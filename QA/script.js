@@ -78,6 +78,7 @@ let currentUser = null;      // Firebase AuthのUID
 let currentUsername = null;  // 画面に出す名前（「1年 情報ビジネス科 5番さん」）
 let currentProfile = null;   // users/{uid} の内容
 let currentSubject = null;
+let currentUnit = '';       // 出題する単元（空＝すべての単元）
 let currentMode = 1;
 let activeQuestions = [];
 let currentIndex = 0;
@@ -123,9 +124,6 @@ async function startApp() {
             currentUsername = nameLabel(currentProfile);
             resetSessionCache();
             await withTimeout(loadSessionData(), 10000, 'データの読み込みがタイムアウトしました。通信環境をご確認ください。');
-            // CBTで登録されている問題セットの単元だけを、一問一答の単元として採用する。
-            // CBTに対応する問題がない／単元が確認できない問題は「単元なし」のままにする。
-            await syncUnitsFromCBTQuestionSets();
             hideLoading();
             showSubjectScreen();
         } catch (error) {
@@ -136,76 +134,6 @@ async function startApp() {
     });
 }
 
-
-// CBTの公開問題セットから、問題文・正解・教科が完全一致する単元だけを同期する。
-// 問題文や正解から単元を推測しない。対応するCBTデータがなければ「単元なし」。
-function normalizeUnitMatchText(value) {
-    return String(value == null ? '' : value).normalize('NFKC').replace(/\s+/g, ' ').trim();
-}
-
-function getCbtCorrectAnswer(item) {
-    if (Array.isArray(item?.a)) {
-        const index = Number.isInteger(Number(item.k)) ? Number(item.k) : 0;
-        return item.a[index] == null ? '' : item.a[index];
-    }
-    return item?.a == null ? '' : item.a;
-}
-
-async function syncUnitsFromCBTQuestionSets() {
-    // 初期値はすべて「単元なし」。CBTのデータで明確に確認できた場合だけ上書きする。
-    const subjects = getSubjectList();
-    subjects.forEach(subject => subject.questions.forEach(question => { question.unit = '単元なし'; }));
-
-    if (!db || !currentUser) return;
-    try {
-        const snapshot = await withTimeout(db.collection('questionSets').get(), 8000, 'CBT単元の読み込みがタイムアウトしました');
-        const cbtUnits = new Map();
-        const ambiguousKeys = new Set();
-
-        snapshot.forEach(doc => {
-            const set = doc.data() || {};
-            const subjectName = normalizeUnitMatchText(set.subject);
-            if (!subjectName) return;
-            (Array.isArray(set.questions) ? set.questions : []).forEach(item => {
-                const questionText = normalizeUnitMatchText(item?.q);
-                const answerText = normalizeUnitMatchText(getCbtCorrectAnswer(item));
-                if (!questionText || !answerText) return;
-
-                const itemUnit = normalizeUnitMatchText(item?.c);
-                const setUnit = normalizeUnitMatchText(set.unit);
-                const unit = itemUnit && itemUnit !== subjectName && itemUnit !== 'すべて'
-                    ? itemUnit
-                    : (setUnit && setUnit !== 'すべて' && setUnit !== subjectName ? setUnit : '単元なし');
-                if (unit === '単元なし') return;
-
-                const key = JSON.stringify([subjectName, questionText, answerText]);
-                if (cbtUnits.has(key) && cbtUnits.get(key) !== unit) {
-                    ambiguousKeys.add(key);
-                } else {
-                    cbtUnits.set(key, unit);
-                }
-            });
-        });
-
-        subjects.forEach(subject => {
-            const subjectName = normalizeUnitMatchText(subject.name);
-            subject.questions.forEach(question => {
-                const key = JSON.stringify([
-                    subjectName,
-                    normalizeUnitMatchText(question.q),
-                    normalizeUnitMatchText(question.a)
-                ]);
-                if (!ambiguousKeys.has(key) && cbtUnits.has(key)) {
-                    question.unit = cbtUnits.get(key);
-                }
-            });
-        });
-    } catch (error) {
-        // CBTの単元データを取得できない場合も、誤った単元を表示せず「単元なし」で続行する。
-        console.warn('CBT単元の同期に失敗したため、単元なしで表示します。', error);
-    }
-}
-
 function getSubjectList() {
     return Object.values(window.QUIZ_SUBJECTS || {}).sort((a, b) => (a.order || 0) - (b.order || 0));
 }
@@ -213,6 +141,20 @@ function getSubjectName(subjectId) {
     const subj = (window.QUIZ_SUBJECTS || {})[subjectId];
     return subj ? subj.name : subjectId;
 }
+// 教科にある単元（問題のデータの "unit"）を、出てくる順に集める
+function getSubjectUnits(subjectId) {
+    const subj = (window.QUIZ_SUBJECTS || {})[subjectId];
+    const counts = new Map();
+    ((subj && subj.questions) || []).forEach((q) => { if (q.unit) counts.set(q.unit, (counts.get(q.unit) || 0) + 1); });
+    return [...counts].map(([name, count]) => ({ name, count }));
+}
+// いま選んでいる単元の問題だけ（★・メモは _origIdx＝教科全体での位置で区別するので、単元で絞っても混ざらない）
+function getUnitQuestions() {
+    const all = getActiveSubjectQuestions();
+    return currentUnit ? all.filter((q) => q.unit === currentUnit) : all;
+}
+function unitSuffix() { return currentUnit ? `（${currentUnit}）` : ''; }
+
 function getActiveSubjectQuestions() {
     const subj = (window.QUIZ_SUBJECTS || {})[currentSubject];
     if (!subj) return [];
@@ -221,44 +163,6 @@ function getActiveSubjectQuestions() {
         if (q._origIdx === undefined) q._origIdx = idx;
     });
     return subj.questions;
-}
-
-function getUnitFilteredQuestions() {
-    const questions = getActiveSubjectQuestions();
-    const select = document.getElementById('unit-filter-select');
-    const selectedUnit = select ? select.value : '__all__';
-    return selectedUnit === '__all__' ? questions : questions.filter(q => (q.unit || '未分類') === selectedUnit);
-}
-
-function populateUnitFilter() {
-    const select = document.getElementById('unit-filter-select');
-    if (!select) return;
-    const questions = getActiveSubjectQuestions();
-    const units = [...new Set(questions.map(q => q.unit || '未分類'))];
-    select.innerHTML = '<option value="__all__">すべての単元</option>' + units.map(unit =>
-        `<option value="${escapeHtml(unit)}">${escapeHtml(unit)}（${questions.filter(q => (q.unit || '未分類') === unit).length}問）</option>`
-    ).join('');
-    select.value = '__all__';
-    updateUnitFilterCount();
-}
-
-function updateUnitFilterCount() {
-    const count = document.getElementById('unit-filter-count');
-    const select = document.getElementById('unit-filter-select');
-    if (!count || !select) return;
-    const total = getActiveSubjectQuestions().length;
-    const selectedQuestions = getUnitFilteredQuestions();
-    count.textContent = select.value === '__all__'
-        ? `全${total}問から出題します。`
-        : `この単元の${selectedQuestions.length}問から出題します。`;
-
-    const starModeBtn = document.getElementById('menu-star-btn');
-    if (starModeBtn) {
-        const stars = getSessionStars(currentSubject);
-        const filteredStarCount = selectedQuestions.filter(question => stars.includes(question._origIdx)).length;
-        starModeBtn.innerText = `★ 限定モード (現在 ${filteredStarCount} 問)`;
-        starModeBtn.disabled = filteredStarCount === 0;
-    }
 }
 
 function showCustomAlert(message, title = '通知') {
@@ -431,6 +335,7 @@ function showSubjectScreen() {
 
 async function selectSubject(subjectId) {
     currentSubject = subjectId;
+    currentUnit = '';
     await showMainMenu();
 }
 
@@ -439,12 +344,31 @@ async function showMainMenu() {
     document.getElementById('menu-screen').style.display = 'block';
     document.getElementById('display-username').innerText = currentUsername;
     document.getElementById('menu-subject-name').innerText = getSubjectName(currentSubject);
-    populateUnitFilter();
 
+
+    // 単元の選択（単元のデータがない教科では出さない）
+    const units = getSubjectUnits(currentSubject);
+    const picker = document.getElementById('unit-picker');
+    picker.style.display = units.length ? 'block' : 'none';
+    if (!units.some((u) => u.name === currentUnit)) currentUnit = '';
+    const total = (getActiveSubjectQuestions() || []).length;
+    document.getElementById('unit-select').innerHTML =
+        `<option value="">すべての単元（全${total}問）</option>` +
+        units.map((u) => `<option value="${escapeHtml(u.name)}"${u.name === currentUnit ? ' selected' : ''}>${escapeHtml(u.name)}（${u.count}問）</option>`).join('');
+    refreshStarButton();
+}
+
+function refreshStarButton() {
     const starModeBtn = document.getElementById('menu-star-btn');
-    const starCount = getSessionStars(currentSubject).length;
+    const myStars = getSessionStars(currentSubject);
+    const starCount = getUnitQuestions().filter((q) => myStars.includes(q._origIdx)).length;
     starModeBtn.innerText = `★ 限定モード (現在 ${starCount} 問)`;
     starModeBtn.disabled = starCount === 0;
+}
+
+function onUnitChange() {
+    currentUnit = document.getElementById('unit-select').value;
+    refreshStarButton();
 }
 
 async function toMainMenu() {
@@ -466,8 +390,8 @@ async function startMode(modeNum) {
 
     document.querySelectorAll('.window').forEach(el => el.style.display = 'none');
 
-    const questions = getUnitFilteredQuestions();
-    const subjectName = getSubjectName(currentSubject);
+    const questions = getUnitQuestions();
+    const subjectName = getSubjectName(currentSubject) + unitSuffix();
     const myStars = getSessionStars(currentSubject);
 
     if (modeNum === 1) {
@@ -482,7 +406,7 @@ async function startMode(modeNum) {
         document.getElementById('quiz-title').innerText = `${subjectName} - ランダム実力テスト`;
         await setupQuizScreen();
     } else if (modeNum === 4) {
-        activeQuestions = questions.filter(question => myStars.includes(question._origIdx));
+        activeQuestions = questions.filter((q) => myStars.includes(q._origIdx));
         document.getElementById('quiz-title').innerText = `${subjectName} - ★ わからない問題 復習テスト`;
         await setupQuizScreen();
     }
@@ -504,10 +428,11 @@ async function showQuestion() {
     const container = document.getElementById('quiz-a-container');
     container.classList.remove('revealed');
 
+    const unitEl = document.getElementById('quiz-unit');
+    unitEl.textContent = current.unit || '';
+    unitEl.style.display = current.unit ? 'inline-block' : 'none';
     document.getElementById('quiz-question').innerText = current.q;
     document.getElementById('quiz-answer').innerText = current.a;
-    const unitLabel = document.getElementById('quiz-unit-label');
-    if (unitLabel) unitLabel.textContent = current.unit ? `単元：${current.unit}` : '単元：未分類';
 
     const imgEl = document.getElementById('quiz-question-img');
     if (current.img) {
@@ -631,19 +556,19 @@ async function prevQuestion() {
 async function setupListScreen() {
     document.getElementById('list-screen').style.display = 'block';
     const container = document.getElementById('list-container');
-    const questions = getUnitFilteredQuestions();
+    const questions = getUnitQuestions();
     const myStars = getSessionStars(currentSubject);
     const myMemos = getSessionMemos(currentSubject);
 
-    const htmlParts = questions.map((item, idx) => {
-        const originalIdx = item._origIdx;
-        const isStarred = myStars.includes(originalIdx);
-        const memoText = escapeHtml(myMemos[originalIdx] || '');
+    const htmlParts = questions.map((item, pos) => {
+        const idx = item._origIdx;   // ★・メモは教科全体での位置で扱う
+        const isStarred = myStars.includes(idx);
+        const memoText = escapeHtml(myMemos[idx] || '');
         return `
             <div class="qa-card">
                 <div class="card-header">
-                    <div class="q-text">問 ${idx + 1}: ${escapeHtml(item.q)}<small style="display:block; margin-top:5px; color:#7f8c8d; font-size:11px;">単元：${escapeHtml(item.unit || '未分類')}</small></div>
-                    <button class="star-btn ${isStarred ? 'active' : ''}" onclick="toggleStarList(${originalIdx}, this)">★</button>
+                    <div class="q-text">${item.unit ? `<span class="unit-chip">${escapeHtml(item.unit)}</span>` : ''}問 ${pos + 1}: ${escapeHtml(item.q)}</div>
+                    <button class="star-btn ${isStarred ? 'active' : ''}" onclick="toggleStarList(${idx}, this)">★</button>
                 </div>
                 ${item.img ? `<img src="${escapeHtml(item.img)}" class="q-image" alt="問題の画像">` : ''}
                 <div class="a-container" onclick="toggleAnswer(this)">
@@ -659,7 +584,7 @@ async function setupListScreen() {
                         <span class="memo-header-text">メモ</span>
                         <span class="memo-status" id="list-memo-status-${idx}"></span>
                     </div>
-                    <textarea class="memo-textarea" autocomplete="off" id="list-memo-${idx}" data-original-idx="${originalIdx}" placeholder="気づいたこと・覚え方のコツなどを書いておこう" oninput="onListMemoInput(${idx}, ${originalIdx})" onblur="saveListMemoNow(${idx}, ${originalIdx})">${memoText}</textarea>
+                    <textarea class="memo-textarea" autocomplete="off" id="list-memo-${idx}" placeholder="気づいたこと・覚え方のコツなどを書いておこう" oninput="onListMemoInput(${idx})" onblur="saveListMemoNow(${idx})">${memoText}</textarea>
                 </div>
             </div>`;
     });
@@ -668,16 +593,16 @@ async function setupListScreen() {
     updateBulkToggleBtnLabel();
 }
 
-function onListMemoInput(idx, originalIdx = idx) {
+function onListMemoInput(idx) {
     const memoEl = document.getElementById('list-memo-' + idx);
-    scheduleMemoSave('list-' + idx, () => saveMemoValue(originalIdx, memoEl.value), 'list-memo-status-' + idx);
+    scheduleMemoSave('list-' + idx, () => saveMemoValue(idx, memoEl.value), 'list-memo-status-' + idx);
 }
 
-async function saveListMemoNow(idx, originalIdx = idx) {
+async function saveListMemoNow(idx) {
     const memoEl = document.getElementById('list-memo-' + idx);
     const key = 'list-' + idx;
     if (memoSaveTimers[key]) clearTimeout(memoSaveTimers[key]);
-    await saveMemoValue(originalIdx, memoEl.value);
+    await saveMemoValue(idx, memoEl.value);
     const statusEl = document.getElementById('list-memo-status-' + idx);
     if (statusEl) {
         statusEl.textContent = '✓ 保存しました';
@@ -699,8 +624,6 @@ function toggleStarList(originalIdx, btnEl) {
 }
 
 // --- キーボード操作（クイズ画面：→次、←前、Enterで答え） ---
-document.getElementById('unit-filter-select')?.addEventListener('change', updateUnitFilterCount);
-
 document.addEventListener('keydown', function (e) {
     const tag = e.target.tagName;
     const quizScreen = document.getElementById('quiz-screen');

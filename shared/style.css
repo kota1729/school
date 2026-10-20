@@ -673,3 +673,8 @@ img, video { max-width: 100%; height: auto; }
 
 /* 入力欄とプルダウンの高さをそろえる */
 input:not([type=checkbox]):not([type=radio]):not([type=file]), select { height: 44px; box-sizing: border-box; }
+
+/* 選択肢の絞り込み欄（パソコンのみ表示される） */
+.picker-search { grid-column: 1 / -1; position: sticky; top: 0; z-index: 1; height: 40px; padding: 0 12px; border: 2px solid var(--blue); border-radius: 8px; background: #fff; font-size: 15px; }
+.picker-empty { grid-column: 1 / -1; margin: 6px 0; text-align: center; font-size: 14px; color: var(--muted); }
+.number-picker-option.hidden { display: none; }

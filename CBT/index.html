@@ -68,7 +68,7 @@
                                 <option value="fill">回答を直接入力する</option>
                                 <option value="individual">1問ずつ出題（各問4択）</option>
                             </select></div>
-                        <div id="pageSizeField"><label for="newPageSize">1画面あたりの問題数</label><select id="newPageSize" autocomplete="off"><option value="1">1問</option><option value="2">2問</option><option value="3">3問</option><option value="4">4問</option><option value="5">5問</option><option value="6">6問</option><option value="7">7問</option><option value="8">8問</option><option value="9">9問</option><option value="10" selected>10問</option><option value="11">11問</option><option value="12">12問</option><option value="13">13問</option><option value="14">14問</option><option value="15">15問</option><option value="16">16問</option><option value="17">17問</option><option value="18">18問</option><option value="19">19問</option><option value="20">20問</option><option value="21">21問</option><option value="22">22問</option><option value="23">23問</option><option value="24">24問</option><option value="25">25問</option><option value="26">26問</option><option value="27">27問</option><option value="28">28問</option><option value="29">29問</option><option value="30">30問</option></select></div>
+                        <div id="pageSizeField"><label for="newPageSize">1画面あたりの問題数（1〜30）</label><input id="newPageSize" type="text" inputmode="numeric" value="10" autocomplete="off"></div>
                         <div><label for="releaseMode">生徒への出題時刻</label><select autocomplete="off" id="releaseMode">
                                 <option value="now">今すぐ公開</option>
                                 <option value="delay">何分後に公開</option>
@@ -435,7 +435,8 @@
             singleOptions = [];
             questionIndex = 0;
             batchPage = 0; batchAnswers = []; pagePools = [];
-            pageSize = questionMode !== 'single' && selectedQuestionSet.pageSize > 0 ? selectedQuestionSet.pageSize : questions.length;
+            // 先生が決めた数。決めていない古いセットは、最大30問ずつに分ける
+            pageSize = questionMode === 'single' ? questions.length : (selectedQuestionSet.pageSize > 0 ? selectedQuestionSet.pageSize : Math.min(questions.length, 30));
             $('profile').classList.add('hidden');
             $('quiz').classList.remove('hidden');
             $('quizUnit').textContent = selectedQuestionSet.unit || selectedQuestionSet.title || '';
@@ -582,6 +583,9 @@
         $('prevPage').onclick = () => goBatchPage(-1);
         $('nextPage').onclick = () => goBatchPage(1);
 
+        const DESKTOP_INPUT = window.matchMedia('(hover: hover) and (pointer: fine)');
+        const normalizeSearch = (s) => String(s).normalize('NFKC').toLowerCase().replace(/\s/g, '');
+
         function renderAnswerNumberPickers() {
             document.querySelectorAll('.number-picker').forEach((picker) => {
                 const questionIndex = Number(picker.dataset.answerIndex);
@@ -594,11 +598,43 @@
                 picker.querySelector('.number-picker-toggle').textContent = ownChoice === null
                     ? '番号を選択'
                     : `選択中：${ownChoice + 1}. ${sharedChoicePool[ownChoice]}`;
-                picker.querySelector('.number-picker-options').innerHTML = options.map((index) => `
+                // 文字で絞り込む欄は、パソコン（マウスで操作する環境）だけ
+                const search = DESKTOP_INPUT.matches ? '<input class="picker-search" type="text" placeholder="文字で絞り込み（例：借）" aria-label="選択肢を文字で絞り込む" autocomplete="off">' : '';
+                picker.querySelector('.number-picker-options').innerHTML = search + options.map((index) => `
                     <button class="number-picker-option ${ownChoice === index ? 'is-selected' : ''}" type="button" data-choice-index="${index}" aria-pressed="${ownChoice === index}">${index + 1}. ${escapeHtml(sharedChoicePool[index])}</button>
-                `).join('');
+                `).join('') + '<p class="picker-empty hidden">該当する選択肢がありません。</p>';
             });
         }
+
+        // 選択肢の絞り込み（パソコンのみ）：入力した文字を含む選択肢だけを表示。Enterで、1つに絞れていれば選ぶ。Escで閉じる
+        $('batchQuestions').addEventListener('input', (event) => {
+            const box = event.target.closest('.picker-search');
+            if (!box) return;
+            const word = normalizeSearch(box.value);
+            const list = box.closest('.number-picker-options');
+            let shown = 0;
+            list.querySelectorAll('.number-picker-option').forEach((button) => {
+                const hit = !word || normalizeSearch(button.textContent.replace(/^\d+\.\s*/, '')).includes(word);
+                button.classList.toggle('hidden', !hit);
+                if (hit) shown++;
+            });
+            list.querySelector('.picker-empty').classList.toggle('hidden', shown > 0);
+        });
+        $('batchQuestions').addEventListener('keydown', (event) => {
+            const box = event.target.closest('.picker-search');
+            if (!box || event.isComposing) return;
+            const list = box.closest('.number-picker-options');
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const visible = [...list.querySelectorAll('.number-picker-option:not(.hidden)')];
+                if (visible.length === 1) visible[0].click();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                list.classList.add('hidden');
+                list.previousElementSibling.setAttribute('aria-expanded', 'false');
+                list.previousElementSibling.focus();
+            }
+        });
 
         $('batchQuestions').addEventListener('click', (event) => {
             const toggle = event.target.closest('.number-picker-toggle');
@@ -613,6 +649,7 @@
                 const willOpen = currentOptions.classList.contains('hidden');
                 currentOptions.classList.toggle('hidden', !willOpen);
                 toggle.setAttribute('aria-expanded', String(willOpen));
+                if (willOpen) { const box = currentOptions.querySelector('.picker-search'); if (box) box.focus({ preventScroll: true }); }
                 return;
             }
 
@@ -799,7 +836,8 @@
                 });
         }
 
-        // 1画面あたりの問題数は選択式（1〜30）。ランダムに選ぶ問題数は条件に合う問題数まで。
+        // 数字欄：1画面あたりの問題数は1〜30、ランダムに選ぶ問題数は「いまの条件に合う問題数」まで
+        limitNumberInput($('newPageSize'), () => 30);
         const fixRandomCount = limitNumberInput($('randomQuestionCount'), () => getMatchingSourceQuestions().length);
         function syncRandomMax() {
             const n = getMatchingSourceQuestions().length;
@@ -1073,7 +1111,7 @@
             if (type !== 'individual') {
                 pageSize = Number($('newPageSize').value);
                 if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 30) {
-                    $('authorMessage').textContent = '1画面あたりの問題数を1〜30から選択してください。';
+                    $('authorMessage').textContent = '1画面あたりの問題数は、1〜30の整数で入力してください。';
                     return;
                 }
             }

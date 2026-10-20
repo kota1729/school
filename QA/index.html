@@ -58,12 +58,9 @@
         <h1><span id="menu-subject-name">--</span> クイズメニュー</h1>
         <p class="subtitle">自分のやるモードを選んでください。</p>
 
-        <div class="unit-filter" style="margin:0 0 18px; text-align:left;">
-            <label for="unit-filter-select" style="display:block; font-weight:700; margin-bottom:6px;">出題する単元</label>
-            <select id="unit-filter-select" style="width:100%; padding:12px; border:1px solid #ddd; border-radius:6px; font-size:15px; background:#fff;">
-                <option value="__all__">すべての単元</option>
-            </select>
-            <p id="unit-filter-count" style="font-size:12px; color:#7f8c8d; margin-top:6px;">全問から出題します。</p>
+        <div class="unit-picker" id="unit-picker">
+            <label for="unit-select">出題する単元</label>
+            <select id="unit-select" autocomplete="off" onchange="onUnitChange()"></select>
         </div>
 
         <button class="menu-btn" onclick="startMode(1)">
@@ -103,6 +100,7 @@
         </div>
 
         <div class="qa-card">
+            <div class="unit-chip" id="quiz-unit"></div>
             <div class="card-header">
                 <div class="q-text" id="quiz-question">問題文がここに表示されます。</div>
                 <button class="star-btn" id="quiz-star" onclick="toggleStarCurrent()">★</button>
