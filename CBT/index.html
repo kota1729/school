@@ -23,9 +23,7 @@
             <div class="auth-form">
                 <button type="button" id="chooseTeacher">先生画面（問題の公開・生徒の記録）</button>
                 <button type="button" id="chooseStudent">生徒画面（問題を解く）</button>
-                <button type="button" id="chooseAdmin">管理画面（生徒の登録・パスワード・問題テンプレート）</button>
             </div>
-            <p class="muted auth-msg" id="chooserMessage" role="status"></p>
             <div class="auth-btns"><button class="secondary" type="button" id="chooserBack">アプリの選択に戻る</button></div>
         </section>
         <section class="card hidden" id="profile">
@@ -329,9 +327,6 @@
             viewMode = '';
             $('roleChooser').classList.remove('hidden');
             $('roleChooserWho').textContent = nameLabel(activeAccount);
-            const hasUrl = Boolean((window.ADMIN_PAGE_URL || '').trim());
-            $('chooseAdmin').disabled = !hasUrl;
-            $('chooserMessage').textContent = hasUrl ? '' : '管理画面のURLが未設定です（firebase-config.js の ADMIN_PAGE_URL に、Apps Scriptのウェブアプリ URL を入れてください）。';
         }
 
         async function enterTeacher() {
@@ -361,10 +356,6 @@
 
         $('chooseTeacher').onclick = () => { $('chooseTeacher').disabled = true; showLoading('読み込み中…'); enterTeacher().finally(() => { hideLoading(); $('chooseTeacher').disabled = false; }); };
         $('chooseStudent').onclick = () => { showLoading('読み込み中…'); enterStudent().finally(hideLoading); };
-        $('chooseAdmin').onclick = () => {
-            const url = (window.ADMIN_PAGE_URL || '').trim();
-            if (url) window.open(url, '_blank', 'noopener');
-        };
 
         function studentProfile() {
             return {
@@ -1291,9 +1282,8 @@
                     activeSchool = (window.SCHOOL_LIST || [])[0] || { id: 'main' };
                     activeAccount = account;
                     document.querySelectorAll('.admin-only').forEach((el) => el.classList.toggle('hidden', account.role !== 'admin'));
-                    document.querySelectorAll('[data-to-prev]').forEach((el) => { el.textContent = account.role === 'admin' ? '先生・生徒・管理の選択に戻る' : 'アプリの選択に戻る'; });
+                    document.querySelectorAll('[data-to-prev]').forEach((el) => { el.textContent = account.role === 'admin' ? '先生画面・生徒画面の選択に戻る' : 'アプリの選択に戻る'; });
                     if (account.role === 'admin') showRoleChooser();
-                    else if (account.role === 'teacher') await enterTeacher();
                     else await enterStudent();
                 } catch (e) {
                     goLogin();

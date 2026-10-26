@@ -16,7 +16,9 @@
         <section class="card hidden" id="loginPanel">
             <h1 class="auth-title" style="margin-bottom:22px">ログイン</h1>
             <div class="auth-form">
-                <input id="userIdInput" type="text" autocomplete="off" required placeholder="ユーザーID">
+                <select id="gradeSelect" autocomplete="off" aria-label="学年"><option value="">学年を選択</option><option value="1">1年</option><option value="2">2年</option><option value="3">3年</option></select>
+                <select id="deptSelect" autocomplete="off" aria-label="学科"><option value="">学科を選択</option></select>
+                <select id="numberSelect" autocomplete="off" aria-label="出席番号"><option value="">出席番号を選択</option></select>
                 <div class="password-wrapper">
                     <input id="passwordInput" type="password" autocomplete="off" placeholder="パスワード">
                     <button class="toggle-pw-btn" id="togglePassword" type="button" data-target="passwordInput" aria-pressed="false">表示</button>
@@ -101,11 +103,20 @@
             ['loginPanel', 'passwordChangePanel', 'selfPwPanel', 'appChooser'].forEach((id) => $(id).classList.add('hidden'));
         }
 
+        // ユーザーID = 学年-学科コード-出席番号（2桁）。管理画面の名簿と同じ決まり
+        const DEPARTMENTS = [['環境システム科', 'KANKYO'], ['機械科', 'KIKAI'], ['電子情報技術科', 'DENSI'], ['情報ビジネス科', 'JOHO'], ['総合ビジネス科', 'SOGO']];
+        $('deptSelect').insertAdjacentHTML('beforeend', DEPARTMENTS.map(([n, c]) => `<option value="${c}">${n}</option>`).join(''));
+        $('numberSelect').insertAdjacentHTML('beforeend', Array.from({ length: 40 }, (_, i) => `<option value="${String(i + 1).padStart(2, '0')}">${i + 1}番</option>`).join(''));
+        const selectedUserId = () => {
+            const g = $('gradeSelect').value, d = $('deptSelect').value, n = $('numberSelect').value;
+            return g && d && n ? `${g}-${d}-${n}` : '';
+        };
+
         function showLogin() {
             hideViews();
             $('loginPanel').classList.remove('hidden');
             $('passwordInput').value = '';
-            $('userIdInput').value = '';
+            ['gradeSelect', 'deptSelect', 'numberSelect'].forEach((id) => { $(id).value = ''; });
             pendingMatch = null;
             $('newPassword').value = '';
             $('newPasswordConfirm').value = '';
@@ -119,7 +130,7 @@
             const code = (error && error.code) || '';
             if (code === 'auth/too-many-requests') return '失敗が続いたため一時的にロックされました。しばらくしてからやり直してください。';
             if (code === 'auth/network-request-failed') return 'ネットワークに接続できません。';
-            if (code.startsWith('auth/')) return 'ユーザーIDまたはパスワードが違います。';
+            if (code.startsWith('auth/')) return '学年・学科・出席番号またはパスワードが違います。';
             if (code === 'permission-denied' || code === 'unavailable' || code === 'failed-precondition') {
                 return 'ログインはできましたが、データを読み込めませんでした。（コード: ' + code + '）先生に伝えてください。';
             }
@@ -135,7 +146,7 @@
                 btn.setAttribute('aria-pressed', String(!isVisible));
             });
         });
-        ['userIdInput', 'passwordInput'].forEach((id) => {
+        ['passwordInput'].forEach((id) => {
             $(id).addEventListener('keydown', (event) => {
                 if (event.key === 'Enter') $('loginButton').click();
             });
@@ -143,12 +154,12 @@
 
         $('loginButton').onclick = async () => {
             $('loginMessage').textContent = '';
-            const userId = $('userIdInput').value.trim();
+            const userId = selectedUserId();
             const password = $('passwordInput').value;
             if (!auth) return;
             await persistenceReady;
             if (!userId || !password) {
-                $('loginMessage').textContent = 'ユーザーIDとパスワードを入力してください。';
+                $('loginMessage').textContent = '学年・学科・出席番号を選び、パスワードを入力してください。';
                 return;
             }
             $('loginButton').disabled = true;
@@ -279,7 +290,13 @@
         }
 
         // ログイン後、どのアプリを使うか選ぶ（アプリの一覧は apps.js）
-        $('appList').innerHTML = (window.APPS || []).map((app) => `<button type="button" data-app="${escapeHtml(app.id)}" data-path="${escapeHtml(app.path)}">${escapeHtml(app.name)}</button>`).join('');
+        $('appList').innerHTML = (window.APPS || []).map((app) => `<button type="button" data-app="${escapeHtml(app.id)}" data-path="${escapeHtml(app.path)}">${escapeHtml(app.name)}</button>`).join('')
+            + '<button type="button" id="openAdminPage" class="hidden">管理画面（生徒の登録・パスワード・問題テンプレート）</button>';   // 管理者だけに出る
+        $('openAdminPage').onclick = () => {
+            const url = (window.ADMIN_PAGE_URL || '').trim();
+            if (url) window.open(url, '_blank', 'noopener');
+            else showAlert('管理画面のURLが未設定です（firebase-config.js の ADMIN_PAGE_URL に、Apps Scriptのウェブアプリ URL を入れてください）。');
+        };
         $('appList').addEventListener('click', (event) => {
             const b = event.target.closest('button[data-app]');
             if (!b) return;
@@ -290,6 +307,7 @@
             hideViews();
             $('appChooser').classList.remove('hidden');
             $('appChooserWho').textContent = nameLabel(activeAccount);
+            $('openAdminPage').classList.toggle('hidden', activeAccount.role !== 'admin');
         }
         $('appChooserLogout').onclick = showLogin;
 
@@ -314,7 +332,7 @@
             if (!cur || !a) { msg.textContent = '今のパスワードと新しいパスワードを入力してください。'; return; }
             if (a.length < 8) { msg.textContent = 'パスワードは8文字以上にしてください。'; return; }
             if (a === cur) { msg.textContent = '今のパスワードとは別のパスワードにしてください。'; return; }
-            if (a.toLowerCase() === String(activeAccount.userId || '').toLowerCase()) { msg.textContent = 'ユーザーIDと同じ文字列は使えません。'; return; }
+            if (a.toLowerCase() === String(activeAccount.userId || '').toLowerCase()) { msg.textContent = 'ユーザーID（学年-学科-番号）と同じ文字列は使えません。'; return; }
             if (a !== $('selfNewPwConfirm').value) { msg.textContent = '確認用のパスワードが一致しません。'; return; }
             if (!await showConfirm('パスワードを変更します。変更後の1週間は、もう一度変更することはできません。よろしいですか？', 'パスワードの変更')) return;
             $('saveSelfPw').disabled = true;
